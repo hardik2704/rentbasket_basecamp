@@ -1,0 +1,11 @@
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    background-color: var(--color-bg-secondary);
+    min-height: 100vh;
+}
