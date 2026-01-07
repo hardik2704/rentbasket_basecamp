@@ -25,6 +25,15 @@ const fileSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    storagePath: {
+        type: String,
+        default: null
+    },
+    storageType: {
+        type: String,
+        enum: ['local', 'supabase'],
+        default: 'local'
+    },
     type: {
         type: String,
         required: true

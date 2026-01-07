@@ -5,30 +5,31 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { File, Project } = require('../models');
 const { protect } = require('../middleware');
+const supabaseStorage = require('../config/supabase');
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(protect);
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadPath = process.env.UPLOAD_PATH || './uploads';
-        // Create directory if it doesn't exist
-        if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
+// Use memory storage if Supabase is configured, disk storage otherwise
+const storage = supabaseStorage.isConfigured()
+    ? multer.memoryStorage()
+    : multer.diskStorage({
+        destination: (req, file, cb) => {
+            const uploadPath = process.env.UPLOAD_PATH || './uploads';
+            if (!fs.existsSync(uploadPath)) {
+                fs.mkdirSync(uploadPath, { recursive: true });
+            }
+            cb(null, uploadPath);
+        },
+        filename: (req, file, cb) => {
+            const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
+            cb(null, uniqueName);
         }
-        cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-        const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-        cb(null, uniqueName);
-    }
-});
+    });
 
 const fileFilter = (req, file, cb) => {
-    // Allow common file types
     const allowedTypes = [
         'image/jpeg',
         'image/png',
@@ -55,7 +56,7 @@ const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 // 10MB default
+        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024
     }
 });
 
@@ -74,15 +75,31 @@ router.get('/project/:projectId', async (req, res, next) => {
 
         const files = await File.getProjectFiles(req.params.projectId);
 
-        res.json({
-            success: true,
-            count: files.length,
-            data: files.map(f => ({
+        // Generate signed URLs for Supabase files
+        const filesWithUrls = await Promise.all(files.map(async (f) => {
+            const fileObj = {
                 ...f.toObject(),
                 id: f._id,
                 formattedSize: f.getFormattedSize(),
                 typeCategory: f.getTypeCategory()
-            }))
+            };
+
+            // If stored in Supabase and URL is a path, get signed URL
+            if (supabaseStorage.isConfigured() && f.storagePath) {
+                try {
+                    fileObj.url = await supabaseStorage.getSignedUrl(f.storagePath);
+                } catch (e) {
+                    console.error('Error getting signed URL:', e);
+                }
+            }
+
+            return fileObj;
+        }));
+
+        res.json({
+            success: true,
+            count: files.length,
+            data: filesWithUrls
         });
     } catch (error) {
         next(error);
@@ -104,14 +121,25 @@ router.get('/:id', async (req, res, next) => {
             });
         }
 
+        const fileObj = {
+            ...file.toObject(),
+            id: file._id,
+            formattedSize: file.getFormattedSize(),
+            typeCategory: file.getTypeCategory()
+        };
+
+        // Get signed URL for Supabase files
+        if (supabaseStorage.isConfigured() && file.storagePath) {
+            try {
+                fileObj.url = await supabaseStorage.getSignedUrl(file.storagePath);
+            } catch (e) {
+                console.error('Error getting signed URL:', e);
+            }
+        }
+
         res.json({
             success: true,
-            data: {
-                ...file.toObject(),
-                id: file._id,
-                formattedSize: file.getFormattedSize(),
-                typeCategory: file.getTypeCategory()
-            }
+            data: fileObj
         });
     } catch (error) {
         next(error);
@@ -133,8 +161,8 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         const { projectId, description } = req.body;
 
         if (!projectId) {
-            // Delete uploaded file if projectId is missing
-            fs.unlinkSync(req.file.path);
+            // Clean up if projectId missing
+            if (req.file.path) fs.unlinkSync(req.file.path);
             return res.status(400).json({
                 success: false,
                 error: 'Project ID is required'
@@ -143,19 +171,46 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 
         const project = await Project.findById(projectId);
         if (!project) {
-            fs.unlinkSync(req.file.path);
+            if (req.file.path) fs.unlinkSync(req.file.path);
             return res.status(404).json({
                 success: false,
                 error: 'Project not found'
             });
         }
 
+        const uniqueName = `${uuidv4()}${path.extname(req.file.originalname)}`;
+        let fileUrl, storagePath;
+
+        // Upload to Supabase if configured, otherwise use local storage
+        if (supabaseStorage.isConfigured()) {
+            try {
+                const result = await supabaseStorage.uploadFile(
+                    req.file.buffer,
+                    uniqueName,
+                    req.file.mimetype
+                );
+                fileUrl = result.url;
+                storagePath = result.path;
+            } catch (uploadError) {
+                return res.status(500).json({
+                    success: false,
+                    error: `Upload failed: ${uploadError.message}`
+                });
+            }
+        } else {
+            // Local storage - file is already saved by multer
+            fileUrl = `/uploads/${req.file.filename}`;
+            storagePath = null;
+        }
+
         const file = await File.create({
             project: projectId,
-            name: req.file.filename,
+            name: supabaseStorage.isConfigured() ? uniqueName : req.file.filename,
             originalName: req.file.originalname,
             description: description || '',
-            url: `/uploads/${req.file.filename}`,
+            url: fileUrl,
+            storagePath: storagePath,
+            storageType: supabaseStorage.isConfigured() ? 'supabase' : 'local',
             type: path.extname(req.file.originalname).slice(1),
             mimeType: req.file.mimetype,
             size: req.file.size,
@@ -174,7 +229,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
             }
         });
     } catch (error) {
-        // Clean up file on error
+        // Clean up on error
         if (req.file && req.file.path) {
             try {
                 fs.unlinkSync(req.file.path);
@@ -244,15 +299,18 @@ router.delete('/:id', async (req, res, next) => {
             });
         }
 
-        // Soft delete (keep file for potential recovery)
+        // Delete from cloud storage if applicable
+        if (file.storageType === 'supabase' && file.storagePath && supabaseStorage.isConfigured()) {
+            try {
+                await supabaseStorage.deleteFile(file.storagePath);
+            } catch (e) {
+                console.error('Error deleting from Supabase:', e);
+            }
+        }
+
+        // Soft delete
         file.isDeleted = true;
         await file.save();
-
-        // Optionally delete physical file
-        // const filePath = path.join(process.env.UPLOAD_PATH || './uploads', file.name);
-        // if (fs.existsSync(filePath)) {
-        //   fs.unlinkSync(filePath);
-        // }
 
         res.json({
             success: true,

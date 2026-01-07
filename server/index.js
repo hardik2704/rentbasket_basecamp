@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
 const connectDB = require('./config/db');
@@ -20,6 +23,8 @@ const setupSocketHandlers = require('./socket');
 const app = express();
 const server = http.createServer(app);
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 // Socket.io setup
 const io = new Server(server, {
     cors: {
@@ -32,18 +37,72 @@ const io = new Server(server, {
 // Make io accessible to routes
 app.set('io', io);
 
-// Middleware
-app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    credentials: true
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ============ PRODUCTION MIDDLEWARE ============
 
-// Static files for uploads
+// Security headers
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false
+}));
+
+// Gzip compression
+app.use(compression());
+
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: isProduction ? 100 : 1000, // Limit each IP
+    message: {
+        success: false,
+        error: 'Too many requests, please try again later.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+app.use('/api/', limiter);
+
+// Stricter rate limit for auth routes
+const authLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: isProduction ? 10 : 100, // 10 login attempts per hour
+    message: {
+        success: false,
+        error: 'Too many login attempts, please try again later.'
+    }
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// CORS configuration
+const corsOptions = {
+    origin: function (origin, callback) {
+        const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',');
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+app.use(cors(corsOptions));
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Trust proxy for Railway/Heroku
+if (isProduction) {
+    app.set('trust proxy', 1);
+}
+
+// Static files for uploads (local fallback)
 app.use('/uploads', express.static('uploads'));
 
-// API Routes
+// ============ API ROUTES ============
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
@@ -57,19 +116,25 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         message: 'RentBasket API is running',
+        environment: process.env.NODE_ENV || 'development',
         timestamp: new Date().toISOString()
     });
 });
 
-// Error handling middleware
+// ============ ERROR HANDLING ============
 app.use((err, req, res, next) => {
     console.error('Error:', err);
+
+    // Don't leak error details in production
+    const errorMessage = isProduction && !err.isOperational
+        ? 'Internal Server Error'
+        : err.message;
 
     if (err.name === 'ValidationError') {
         return res.status(400).json({
             success: false,
             error: 'Validation Error',
-            details: Object.values(err.errors).map(e => e.message)
+            details: isProduction ? undefined : Object.values(err.errors).map(e => e.message)
         });
     }
 
@@ -82,7 +147,7 @@ app.use((err, req, res, next) => {
 
     res.status(err.status || 500).json({
         success: false,
-        error: err.message || 'Internal Server Error'
+        error: errorMessage
     });
 });
 
@@ -94,7 +159,7 @@ app.use((req, res) => {
     });
 });
 
-// Connect to database and start server
+// ============ SERVER STARTUP ============
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
@@ -110,7 +175,7 @@ const startServer = async () => {
 ║   🚀 RentBasket API Server                 ║
 ╠════════════════════════════════════════════╣
 ║   Port: ${PORT}                              ║
-║   Mode: ${process.env.NODE_ENV || 'development'}                     ║
+║   Mode: ${(process.env.NODE_ENV || 'development').padEnd(20)}║
 ║   API:  http://localhost:${PORT}/api         ║
 ╚════════════════════════════════════════════╝
       `);
