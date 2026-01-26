@@ -36,7 +36,8 @@ export function DashboardPage() {
         const classes: Record<string, string> = {
             tech: 'badge-tech',
             marketing: 'badge-marketing',
-            ops: 'badge-ops'
+            ops: 'badge-ops',
+            personal: 'badge-personal'
         };
         return classes[category] || 'badge-tech';
     };

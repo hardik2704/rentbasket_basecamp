@@ -200,6 +200,11 @@ textarea.form-input {
     color: #065f46;
 }
 
+.badge-personal {
+    background-color: #f3e8ff;
+    color: #7c3aed;
+}
+
 .badge-status-new {
     background-color: #f3f4f6;
     color: #374151;

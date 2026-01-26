@@ -13,7 +13,7 @@ export interface User {
 }
 
 // Project Types
-export type ProjectCategory = 'tech' | 'marketing' | 'ops';
+export type ProjectCategory = 'tech' | 'marketing' | 'ops' | 'personal';
 
 export interface Project {
   id: string;
@@ -71,7 +71,7 @@ export interface ProjectFile {
 }
 
 // Notification Types
-export type NotificationType = 
+export type NotificationType =
   | 'task_assigned'
   | 'task_completed'
   | 'task_due_soon'

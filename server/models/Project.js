@@ -15,7 +15,7 @@ const projectSchema = new mongoose.Schema({
     },
     category: {
         type: String,
-        enum: ['tech', 'marketing', 'ops'],
+        enum: ['tech', 'marketing', 'ops', 'personal'],
         default: 'tech'
     },
     status: {

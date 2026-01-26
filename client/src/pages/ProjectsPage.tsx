@@ -43,7 +43,8 @@ export function ProjectsPage() {
         const classes: Record<string, string> = {
             tech: 'badge-tech',
             marketing: 'badge-marketing',
-            ops: 'badge-ops'
+            ops: 'badge-ops',
+            personal: 'badge-personal'
         };
         return classes[category] || 'badge-tech';
     };
@@ -89,6 +90,12 @@ export function ProjectsPage() {
                         onClick={() => setFilter('ops')}
                     >
                         Operations
+                    </button>
+                    <button
+                        className={`filter-btn ${filter === 'personal' ? 'active' : ''}`}
+                        onClick={() => setFilter('personal')}
+                    >
+                        Personal
                     </button>
                 </div>
 
@@ -186,6 +193,7 @@ export function ProjectsPage() {
                                     <option value="tech">Tech Development</option>
                                     <option value="marketing">Marketing</option>
                                     <option value="ops">Operations</option>
+                                    <option value="personal">Personal Project</option>
                                 </select>
                             </div>
 
