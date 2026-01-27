@@ -1,8 +1,7 @@
-import React, { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Save,
-    ArrowLeft,
     Bold,
     Italic,
     Underline,
@@ -12,7 +11,6 @@ import {
     AlignCenter,
     AlignRight,
     Link as LinkIcon,
-    Image,
     Heading1,
     Heading2,
     Quote,
@@ -228,8 +226,6 @@ export function DocumentsPage() {
     const { isAdmin } = useAuth();
     const [selectedProject, setSelectedProject] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
-    const navigate = useNavigate();
-
     const filteredDocs = documents.filter(doc => {
         const matchesProject = !selectedProject || doc.projectId === selectedProject;
         const matchesSearch = !searchQuery ||

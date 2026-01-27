@@ -1,208 +1,23 @@
-.projects-page {
-    min-height: 100vh;
-}
-
-.projects-content {
-    padding: var(--spacing-xl);
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-/* Filters */
-.projects-filters {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-xl);
-}
-
-.filter-btn {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: var(--color-bg-primary);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.filter-btn:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-}
-
-.filter-btn.active {
-    background-color: var(--color-primary);
-    border-color: var(--color-primary);
-    color: white;
-}
-
-/* Projects Grid */
-.projects-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: var(--spacing-lg);
-}
-
-.project-card {
-    display: flex;
-    flex-direction: column;
-    padding: 0;
-    overflow: hidden;
-}
-
-.project-link {
-    padding: var(--spacing-lg);
-    text-decoration: none;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.project-card:hover {
-    border-color: var(--color-primary);
-}
-
-.project-card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: var(--spacing-md);
+.filter-divider {
+    width: 1px;
+    height: 24px;
+    background-color: var(--color-border);
+    margin: 0 var(--spacing-sm);
 }
 
 .delete-btn {
-    padding: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
     background: none;
     border: none;
-    color: var(--color-text-muted);
     cursor: pointer;
-    border-radius: var(--radius-sm);
-    opacity: 0;
-    transition: all var(--transition-fast);
+    color: var(--color-text-muted);
+}
+
+.delete-btn:hover {
+    color: var(--color-danger);
 }
 
 .project-card:hover .delete-btn {
     opacity: 1;
-}
-
-.delete-btn:hover {
-    background-color: #fef2f2;
-    color: var(--color-error);
-}
-
-.project-name {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-    margin: 0 0 var(--spacing-sm);
-}
-
-.project-description {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    margin: 0;
-    flex: 1;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.project-footer {
-    display: flex;
-    justify-content: space-between;
-    padding: var(--spacing-md) var(--spacing-lg);
-    background-color: var(--color-bg-secondary);
-    border-top: 1px solid var(--color-border-light);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-}
-
-/* Empty State */
-.projects-grid .empty-state {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-2xl);
-    text-align: center;
-}
-
-.empty-state h3 {
-    margin: 0;
-    font-size: var(--font-size-lg);
-}
-
-.empty-state p {
-    margin: 0;
-    color: var(--color-text-secondary);
-}
-
-/* Modal (reusing from ProjectPage) */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    animation: fadeIn var(--transition-fast);
-}
-
-.modal {
-    background-color: var(--color-bg-primary);
-    border-radius: var(--radius-xl);
-    width: 100%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow-y: auto;
-    animation: slideUp var(--transition-normal);
-}
-
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--color-border-light);
-}
-
-.modal-header h2 {
-    font-size: var(--font-size-lg);
-    margin: 0;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    padding: var(--spacing-xs);
-    color: var(--color-text-muted);
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-}
-
-.modal-close:hover {
-    background-color: var(--color-bg-tertiary);
-    color: var(--color-text-primary);
-}
-
-.modal-form {
-    padding: var(--spacing-lg);
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-lg);
-    padding-top: var(--spacing-lg);
-    border-top: 1px solid var(--color-border-light);
 }

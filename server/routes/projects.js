@@ -201,7 +201,7 @@ router.put('/:id', [
 });
 
 // @route   DELETE /api/projects/:id
-// @desc    Delete project
+// @desc    Soft delete project (mark as completed)
 // @access  Private/Admin
 router.delete('/:id', authorize('admin'), async (req, res, next) => {
     try {
@@ -214,13 +214,14 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
             });
         }
 
-        // Delete all related data
-        await Task.deleteMany({ project: project._id });
-        await project.deleteOne();
+        // Soft delete: Mark as completed instead of deleting
+        project.status = 'completed';
+        await project.save();
 
         res.json({
             success: true,
-            message: 'Project and all related data deleted'
+            message: 'Project archived successfully',
+            data: project // Return updated project so frontend can update state if needed
         });
     } catch (error) {
         next(error);

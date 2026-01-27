@@ -12,7 +12,7 @@ export function ProjectsPage() {
     const { projects, addProject, deleteProject } = useApp();
     const { user, isAdmin } = useAuth();
     const [showModal, setShowModal] = useState(false);
-    const [filter, setFilter] = useState<ProjectCategory | 'all'>('all');
+    const [filter, setFilter] = useState<ProjectCategory | 'all' | 'completed'>('all');
 
     const [form, setForm] = useState<CreateProjectForm>({
         name: '',
@@ -20,9 +20,19 @@ export function ProjectsPage() {
         category: 'tech'
     });
 
-    const filteredProjects = filter === 'all'
-        ? projects
-        : projects.filter(p => p.category === filter);
+    const filteredProjects = projects.filter(p => {
+        // Special case for completed filter
+        if (filter === 'completed') {
+            return p.status === 'completed' || p.status === 'archived';
+        }
+
+        // For other filters, only show active projects
+        if (p.status === 'completed' || p.status === 'archived') return false;
+
+        // Category filter
+        if (filter === 'all') return true;
+        return p.category === filter;
+    });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -32,6 +42,7 @@ export function ProjectsPage() {
             name: form.name,
             description: form.description,
             category: form.category,
+            status: 'active',
             createdBy: user?.id || ''
         });
 
@@ -96,6 +107,13 @@ export function ProjectsPage() {
                         onClick={() => setFilter('personal')}
                     >
                         Personal
+                    </button>
+                    <div className="filter-divider"></div>
+                    <button
+                        className={`filter-btn ${filter === 'completed' ? 'active' : ''}`}
+                        onClick={() => setFilter('completed')}
+                    >
+                        Completed
                     </button>
                 </div>
 

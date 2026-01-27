@@ -20,6 +20,7 @@ export interface Project {
   name: string;
   description: string;
   category: ProjectCategory;
+  status: 'active' | 'archived' | 'completed';
   createdBy: string;
   createdAt: string;
   updatedAt: string;

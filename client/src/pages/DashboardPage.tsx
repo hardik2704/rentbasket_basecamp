@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import {
     FolderKanban,
@@ -18,8 +17,10 @@ export function DashboardPage() {
     const { projects, tasks } = useApp();
     const { user } = useAuth();
 
+    const activeProjects = projects.filter(p => p.status === 'active' || !p.status); // Handle legacy data without status
+
     const stats = {
-        totalProjects: projects.length,
+        totalProjects: activeProjects.length,
         totalTasks: tasks.length,
         completedTasks: tasks.filter(t => t.status === 'done').length,
         inProgressTasks: tasks.filter(t => t.status === 'in_progress').length,
@@ -119,7 +120,7 @@ export function DashboardPage() {
                         </div>
 
                         <div className="projects-grid">
-                            {projects.map(project => (
+                            {activeProjects.map(project => (
                                 <Link to={`/projects/${project.id}`} key={project.id} className="project-card card">
                                     <div className="project-card-header">
                                         <span className={`badge ${getCategoryBadge(project.category)}`}>

@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { Project, Task, Message, Notification, User } from '../types';
-import { projectsAPI, tasksAPI, messagesAPI, notificationsAPI, usersAPI } from '../services/api';
+import { projectsAPI, tasksAPI, messagesAPI, notificationsAPI, usersAPI, ApiError } from '../services/api';
 
 interface AppState {
     projects: Project[];
@@ -11,6 +11,7 @@ interface AppState {
     notifications: Notification[];
     users: User[];
     loading: boolean;
+    error: string | null;
 }
 
 interface AppContextType extends AppState {
@@ -45,8 +46,9 @@ interface AppContextType extends AppState {
     markAllNotificationsRead: () => Promise<void>;
     unreadCount: number;
 
-    // Refresh data
+    // Utility actions
     refreshData: () => Promise<void>;
+    clearError: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -64,11 +66,27 @@ export function AppProvider({ children }: AppProviderProps) {
         documents: [],
         notifications: [],
         users: [],
-        loading: true
+        loading: true,
+        error: null
     });
 
+    // Clear error utility
+    const clearError = useCallback(() => {
+        setState(prev => ({ ...prev, error: null }));
+    }, []);
+
+    // Set error utility
+    const setError = useCallback((error: unknown) => {
+        const message = error instanceof ApiError
+            ? error.message
+            : error instanceof Error
+                ? error.message
+                : 'An unexpected error occurred';
+        setState(prev => ({ ...prev, error: message }));
+    }, []);
+
     // Fetch all data on mount
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
             const token = localStorage.getItem('rentbasket_token');
             if (!token) {
@@ -89,35 +107,38 @@ export function AppProvider({ children }: AppProviderProps) {
                 tasks: tasksRes.data || [],
                 notifications: notificationsRes.data || [],
                 users: usersRes.data || [],
-                loading: false
+                loading: false,
+                error: null
             }));
         } catch (error) {
             console.error('Failed to fetch data:', error);
+            setError(error);
             setState(prev => ({ ...prev, loading: false }));
         }
-    };
+    }, [setError]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
-    const refreshData = async () => {
-        setState(prev => ({ ...prev, loading: true }));
+    const refreshData = useCallback(async () => {
+        setState(prev => ({ ...prev, loading: true, error: null }));
         await fetchData();
-    };
+    }, [fetchData]);
 
-    // Project actions
+    // ============ PROJECT ACTIONS ============
     const addProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'taskCount' | 'memberCount'>) => {
         try {
             const response = await projectsAPI.create(project as any);
             if (response.data) {
                 setState(prev => ({
                     ...prev,
-                    projects: [...prev.projects, response.data]
+                    projects: [...prev.projects, response.data],
+                    error: null
                 }));
             }
         } catch (error) {
-            console.error('Failed to create project:', error);
+            setError(error);
             throw error;
         }
     };
@@ -128,13 +149,12 @@ export function AppProvider({ children }: AppProviderProps) {
             if (response.data) {
                 setState(prev => ({
                     ...prev,
-                    projects: prev.projects.map(p =>
-                        p.id === id ? response.data : p
-                    )
+                    projects: prev.projects.map(p => p.id === id ? response.data : p),
+                    error: null
                 }));
             }
         } catch (error) {
-            console.error('Failed to update project:', error);
+            setError(error);
             throw error;
         }
     };
@@ -142,18 +162,21 @@ export function AppProvider({ children }: AppProviderProps) {
     const deleteProject = async (id: string) => {
         try {
             await projectsAPI.delete(id);
+            // Soft delete: Remove from active projects list in local state
+            // since dashboard only shows active ones.
             setState(prev => ({
                 ...prev,
                 projects: prev.projects.filter(p => p.id !== id),
-                tasks: prev.tasks.filter(t => t.projectId !== id)
+                tasks: prev.tasks.filter(t => t.projectId !== id), // Optional: filter tasks too if view depends on them
+                error: null
             }));
         } catch (error) {
-            console.error('Failed to delete project:', error);
+            setError(error);
             throw error;
         }
     };
 
-    // Task actions
+    // ============ TASK ACTIONS ============
     const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
         try {
             const response = await tasksAPI.create(task);
@@ -163,11 +186,12 @@ export function AppProvider({ children }: AppProviderProps) {
                     tasks: [...prev.tasks, response.data],
                     projects: prev.projects.map(p =>
                         p.id === task.projectId ? { ...p, taskCount: (p.taskCount || 0) + 1 } : p
-                    )
+                    ),
+                    error: null
                 }));
             }
         } catch (error) {
-            console.error('Failed to create task:', error);
+            setError(error);
             throw error;
         }
     };
@@ -178,13 +202,12 @@ export function AppProvider({ children }: AppProviderProps) {
             if (response.data) {
                 setState(prev => ({
                     ...prev,
-                    tasks: prev.tasks.map(t =>
-                        t.id === id ? response.data : t
-                    )
+                    tasks: prev.tasks.map(t => t.id === id ? response.data : t),
+                    error: null
                 }));
             }
         } catch (error) {
-            console.error('Failed to update task:', error);
+            setError(error);
             throw error;
         }
     };
@@ -200,29 +223,27 @@ export function AppProvider({ children }: AppProviderProps) {
                 tasks: prev.tasks.filter(t => t.id !== id),
                 projects: prev.projects.map(p =>
                     p.id === task.projectId ? { ...p, taskCount: Math.max(0, (p.taskCount || 1) - 1) } : p
-                )
+                ),
+                error: null
             }));
         } catch (error) {
-            console.error('Failed to delete task:', error);
+            setError(error);
             throw error;
         }
     };
 
-    const getProjectTasks = (projectId: string) => {
+    const getProjectTasks = useCallback((projectId: string) => {
         return state.tasks.filter(t => t.projectId === projectId);
-    };
+    }, [state.tasks]);
 
-    // Message actions
+    // ============ MESSAGE ACTIONS ============
     const fetchProjectMessages = async (projectId: string) => {
         try {
             const response = await messagesAPI.getByProject(projectId);
             if (response.data) {
                 setState(prev => ({
                     ...prev,
-                    messages: {
-                        ...prev.messages,
-                        [projectId]: response.data
-                    }
+                    messages: { ...prev.messages, [projectId]: response.data }
                 }));
             }
         } catch (error) {
@@ -247,16 +268,16 @@ export function AppProvider({ children }: AppProviderProps) {
                 }));
             }
         } catch (error) {
-            console.error('Failed to send message:', error);
+            setError(error);
             throw error;
         }
     };
 
-    const getProjectMessages = (projectId: string) => {
+    const getProjectMessages = useCallback((projectId: string) => {
         return state.messages[projectId] || [];
-    };
+    }, [state.messages]);
 
-    // File actions (keeping local for now - can be extended to use API)
+    // ============ FILE ACTIONS (Local) ============
     const addFile = (file: Omit<any, 'id' | 'uploadedAt' | 'uploadedBy'>) => {
         const newFile = {
             ...file,
@@ -264,24 +285,18 @@ export function AppProvider({ children }: AppProviderProps) {
             uploadedBy: '1',
             uploadedAt: new Date().toISOString()
         };
-        setState(prev => ({
-            ...prev,
-            files: [...prev.files, newFile]
-        }));
+        setState(prev => ({ ...prev, files: [...prev.files, newFile] }));
     };
 
     const deleteFile = (id: string) => {
-        setState(prev => ({
-            ...prev,
-            files: prev.files.filter(f => f.id !== id)
-        }));
+        setState(prev => ({ ...prev, files: prev.files.filter(f => f.id !== id) }));
     };
 
-    const getProjectFiles = (projectId: string) => {
+    const getProjectFiles = useCallback((projectId: string) => {
         return state.files.filter(f => f.projectId === projectId);
-    };
+    }, [state.files]);
 
-    // Document actions (keeping local for now)
+    // ============ DOCUMENT ACTIONS (Local) ============
     const addDocument = (doc: Omit<any, 'id' | 'createdAt' | 'updatedAt'>) => {
         const newDoc = {
             ...doc,
@@ -289,10 +304,7 @@ export function AppProvider({ children }: AppProviderProps) {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
-        setState(prev => ({
-            ...prev,
-            documents: [...prev.documents, newDoc]
-        }));
+        setState(prev => ({ ...prev, documents: [...prev.documents, newDoc] }));
     };
 
     const updateDocument = (id: string, updates: Partial<any>) => {
@@ -305,21 +317,16 @@ export function AppProvider({ children }: AppProviderProps) {
     };
 
     const deleteDocument = (id: string) => {
-        setState(prev => ({
-            ...prev,
-            documents: prev.documents.filter(d => d.id !== id)
-        }));
+        setState(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) }));
     };
 
-    // Notification actions
+    // ============ NOTIFICATION ACTIONS ============
     const markNotificationRead = async (id: string) => {
         try {
             await notificationsAPI.markRead(id);
             setState(prev => ({
                 ...prev,
-                notifications: prev.notifications.map(n =>
-                    n.id === id ? { ...n, read: true } : n
-                )
+                notifications: prev.notifications.map(n => n.id === id ? { ...n, read: true } : n)
             }));
         } catch (error) {
             console.error('Failed to mark notification as read:', error);
@@ -361,7 +368,8 @@ export function AppProvider({ children }: AppProviderProps) {
         markNotificationRead,
         markAllNotificationsRead,
         unreadCount,
-        refreshData
+        refreshData,
+        clearError
     };
 
     return (
@@ -378,4 +386,3 @@ export function useApp(): AppContextType {
     }
     return context;
 }
-

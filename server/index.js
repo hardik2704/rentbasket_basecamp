@@ -74,13 +74,15 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // CORS configuration
+// CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
         const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',');
-        // Allow requests with no origin (mobile apps, Postman, etc.)
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Allow requests with no origin (mobile apps, Postman, etc.) OR localhost in development
+        if (!origin || allowedOrigins.includes(origin) || (!isProduction && origin?.includes('localhost'))) {
             callback(null, true);
         } else {
+            console.log('Blocked by CORS:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -110,6 +112,18 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/notifications', notificationRoutes);
+
+// ============ PRODUCTION STATIC ASSETS ============
+if (isProduction) {
+    const path = require('path');
+    // Serve static files from the React client build
+    app.use(express.static(path.join(__dirname, '../client/dist')));
+
+    // Handle React routing, return all requests to React app
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
+    });
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -160,7 +174,7 @@ app.use((req, res) => {
 });
 
 // ============ SERVER STARTUP ============
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
     try {

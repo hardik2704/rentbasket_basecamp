@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Circle } from 'lucide-react';
 import { Header } from '../components/layout';
 import { useApp } from '../context/AppContext';
