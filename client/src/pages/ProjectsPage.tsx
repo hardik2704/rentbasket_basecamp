@@ -20,6 +20,9 @@ export function ProjectsPage() {
         category: 'tech'
     });
 
+    // Calculate active projects for header count
+    const activeProjectsCount = projects.filter(p => p.status === 'active' || !p.status).length;
+
     const filteredProjects = projects.filter(p => {
         // Special case for completed filter
         if (filter === 'completed') {
@@ -34,17 +37,20 @@ export function ProjectsPage() {
         return p.category === filter;
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.name.trim()) return;
 
-        addProject({
+        await addProject({
             name: form.name,
             description: form.description,
             category: form.category,
             status: 'active',
             createdBy: user?.id || ''
         });
+
+        // Switch filter to show the new project
+        setFilter(form.category);
 
         setShowModal(false);
         setForm({ name: '', description: '', category: 'tech' });
@@ -64,7 +70,7 @@ export function ProjectsPage() {
         <div className="projects-page">
             <Header
                 title="Projects"
-                subtitle={`${projects.length} active projects`}
+                subtitle={`${activeProjectsCount} active projects`}
                 actions={
                     isAdmin && (
                         <button className="btn btn-primary" onClick={() => setShowModal(true)}>

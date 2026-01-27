@@ -1,23 +1,123 @@
+.projects-page {
+    animation: fadeIn 0.4s ease-out;
+}
+
+.projects-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
+/* Filters */
+.projects-filters {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding-bottom: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    border: 1px solid var(--color-border);
+    background: var(--color-background);
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.filter-btn:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text-secondary);
+    background: var(--color-background-subtle);
+    transform: translateY(-1px);
+}
+
+.filter-btn.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+    box-shadow: 0 2px 8px rgba(var(--color-primary-rgb), 0.25);
+}
+
 .filter-divider {
     width: 1px;
     height: 24px;
     background-color: var(--color-border);
-    margin: 0 var(--spacing-sm);
+    margin: 0 var(--spacing-xs);
 }
 
+/* Delete Button */
 .delete-btn {
     opacity: 0;
-    transition: opacity 0.2s;
-    background: none;
-    border: none;
+    transition: all 0.2s ease;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--color-border);
     cursor: pointer;
     color: var(--color-text-muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .delete-btn:hover {
     color: var(--color-danger);
+    background: #fee2e2;
+    border-color: #fecaca;
+    transform: scale(1.1);
+}
+
+.project-card {
+    position: relative;
 }
 
 .project-card:hover .delete-btn {
     opacity: 1;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xxl) !important;
+    text-align: center;
+    gap: var(--spacing-md);
+    min-height: 400px;
+}
+
+.empty-state svg {
+    color: var(--color-text-light);
+    margin-bottom: var(--spacing-sm);
+}
+
+.empty-state h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.empty-state p {
+    color: var(--color-text-muted);
+    max-width: 300px;
+    margin-bottom: var(--spacing-md);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
