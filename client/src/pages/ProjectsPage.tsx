@@ -164,8 +164,8 @@ export function ProjectsPage() {
                                     <p className="project-description">{project.description}</p>
                                 </Link>
                                 <div className="project-footer">
-                                    <span>{project.taskCount} tasks</span>
-                                    <span>Updated {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}</span>
+                                    <span className="project-task-count">{project.taskCount} tasks</span>
+                                    <span className="project-updated-time">Updated {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}</span>
                                 </div>
                             </div>
                         ))

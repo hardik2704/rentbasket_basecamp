@@ -20,7 +20,7 @@ export function ProjectCard({ project, showActions, onEdit, onDelete }: ProjectC
     const badgeClass = categoryBadgeClasses[project.category] || 'badge-tech';
 
     return (
-        <div className="project-card card">
+        <div className={`project-card card category-${project.category}`}>
             <Link to={`/projects/${project.id}`} className="project-card-link">
                 <div className="project-card-header">
                     <span className={`badge ${badgeClass}`}>

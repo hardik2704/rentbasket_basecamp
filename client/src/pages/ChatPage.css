@@ -35,6 +35,53 @@
     margin-bottom: var(--spacing-xl);
 }
 
+/* Channel Status Filters */
+.channels-header {
+    margin-bottom: var(--spacing-sm);
+}
+
+.channels-header h3 {
+    margin-bottom: var(--spacing-xs);
+}
+
+.channel-status-filters {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
+}
+
+.channel-filter-btn {
+    flex: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.channel-filter-btn:hover {
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-border-medium);
+}
+
+.channel-filter-btn.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.no-channels {
+    padding: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    text-align: center;
+    font-style: italic;
+}
+
 .channel-btn {
     display: flex;
     align-items: center;

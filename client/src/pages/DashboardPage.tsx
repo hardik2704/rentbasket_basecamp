@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     FolderKanban,
@@ -16,6 +17,7 @@ import './DashboardPage.css';
 export function DashboardPage() {
     const { projects, tasks } = useApp();
     const { user } = useAuth();
+    const [taskCategoryFilter, setTaskCategoryFilter] = useState<'all' | 'tech' | 'marketing' | 'personal' | 'ops'>('all');
 
     const activeProjects = projects.filter(p => p.status === 'active' || !p.status); // Handle legacy data without status
 
@@ -31,7 +33,18 @@ export function DashboardPage() {
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .slice(0, 5);
 
-    const myTasks = tasks.filter(t => t.assignedTo === user?.id && t.status !== 'done');
+    const myTasks = tasks.filter(t => t.status === 'new');
+
+    // Filter my tasks by selected category
+    const getProjectCategory = (projectId: string) => {
+        const project = projects.find(p => p.id === projectId);
+        return project?.category || 'tech';
+    };
+
+    const filteredMyTasks = myTasks.filter(task => {
+        if (taskCategoryFilter === 'all') return true;
+        return getProjectCategory(task.projectId) === taskCategoryFilter;
+    });
 
     const getCategoryBadge = (category: string) => {
         const classes: Record<string, string> = {
@@ -121,7 +134,7 @@ export function DashboardPage() {
 
                         <div className="projects-grid">
                             {activeProjects.map(project => (
-                                <Link to={`/projects/${project.id}`} key={project.id} className="project-card card">
+                                <Link to={`/projects/${project.id}`} key={project.id} className={`project-card card category-${project.category}`}>
                                     <div className="project-card-header">
                                         <span className={`badge ${getCategoryBadge(project.category)}`}>
                                             {project.category}
@@ -145,14 +158,27 @@ export function DashboardPage() {
                             <span className="task-count">{myTasks.length} pending</span>
                         </div>
 
+                        {/* Category Filter Tabs */}
+                        <div className="task-category-filters">
+                            {(['all', 'tech', 'marketing', 'personal', 'ops'] as const).map(cat => (
+                                <button
+                                    key={cat}
+                                    className={`category-filter-btn ${taskCategoryFilter === cat ? 'active' : ''} ${cat !== 'all' ? `filter-${cat}` : ''}`}
+                                    onClick={() => setTaskCategoryFilter(cat)}
+                                >
+                                    {cat === 'all' ? 'All' : cat === 'ops' ? 'Operations' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="tasks-list">
-                            {myTasks.length === 0 ? (
+                            {filteredMyTasks.length === 0 ? (
                                 <div className="empty-state">
                                     <CheckCircle2 size={32} />
-                                    <p>All caught up! No pending tasks.</p>
+                                    <p>{taskCategoryFilter === 'all' ? 'All caught up! No pending tasks.' : `No pending ${taskCategoryFilter === 'ops' ? 'operations' : taskCategoryFilter} tasks.`}</p>
                                 </div>
                             ) : (
-                                myTasks.map(task => (
+                                filteredMyTasks.map(task => (
                                     <div key={task.id} className="task-item">
                                         <div className="task-info">
                                             <span className="task-title">{task.title}</span>

@@ -9,10 +9,19 @@ import './ChatPage.css';
 export function ChatPage() {
     const { projects, getProjectMessages, addMessage, users } = useApp();
     const { user } = useAuth();
+    const [projectStatusFilter, setProjectStatusFilter] = useState<'active' | 'completed'>('active');
     const [selectedProject, setSelectedProject] = useState(projects[0]?.id || '');
     const [messageText, setMessageText] = useState('');
     const [showMentions, setShowMentions] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Filter projects by status
+    const filteredProjects = projects.filter(p => {
+        if (projectStatusFilter === 'active') {
+            return p.status === 'active' || !p.status;
+        }
+        return p.status === 'completed' || p.status === 'archived';
+    });
 
     const messages = selectedProject ? getProjectMessages(selectedProject) : [];
     const currentProject = projects.find(p => p.id === selectedProject);
@@ -79,19 +88,41 @@ export function ChatPage() {
             <div className="chat-container">
                 {/* Project Channels */}
                 <aside className="channels-sidebar">
-                    <h3>Channels</h3>
+                    <div className="channels-header">
+                        <h3>Channels</h3>
+                        <div className="channel-status-filters">
+                            <button
+                                className={`channel-filter-btn ${projectStatusFilter === 'active' ? 'active' : ''}`}
+                                onClick={() => setProjectStatusFilter('active')}
+                            >
+                                Active
+                            </button>
+                            <button
+                                className={`channel-filter-btn ${projectStatusFilter === 'completed' ? 'active' : ''}`}
+                                onClick={() => setProjectStatusFilter('completed')}
+                            >
+                                Completed
+                            </button>
+                        </div>
+                    </div>
                     <ul className="channel-list">
-                        {projects.map(project => (
-                            <li key={project.id}>
-                                <button
-                                    className={`channel-btn ${selectedProject === project.id ? 'active' : ''}`}
-                                    onClick={() => setSelectedProject(project.id)}
-                                >
-                                    <span className="channel-hash">#</span>
-                                    <span className="channel-name">{project.name}</span>
-                                </button>
+                        {filteredProjects.length === 0 ? (
+                            <li className="no-channels">
+                                No {projectStatusFilter} projects
                             </li>
-                        ))}
+                        ) : (
+                            filteredProjects.map(project => (
+                                <li key={project.id}>
+                                    <button
+                                        className={`channel-btn ${selectedProject === project.id ? 'active' : ''}`}
+                                        onClick={() => setSelectedProject(project.id)}
+                                    >
+                                        <span className="channel-hash">#</span>
+                                        <span className="channel-name">{project.name}</span>
+                                    </button>
+                                </li>
+                            ))
+                        )}
                     </ul>
 
                     <div className="team-section">

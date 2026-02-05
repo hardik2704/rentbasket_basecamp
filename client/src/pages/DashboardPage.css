@@ -184,6 +184,59 @@
     color: var(--color-text-muted);
 }
 
+/* Task Category Filters */
+.task-category-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.category-filter-btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.category-filter-btn:hover {
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-border-medium);
+}
+
+.category-filter-btn.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.category-filter-btn.filter-tech.active {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+.category-filter-btn.filter-marketing.active {
+    background: #f97316;
+    border-color: #f97316;
+}
+
+.category-filter-btn.filter-personal.active {
+    background: #8b5cf6;
+    border-color: #8b5cf6;
+}
+
+.category-filter-btn.filter-ops.active {
+    background: #22c55e;
+    border-color: #22c55e;
+}
+
 .tasks-list {
     flex: 1;
     overflow-y: auto;
