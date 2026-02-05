@@ -8,30 +8,26 @@ const router = express.Router();
 router.use(protect);
 
 // @route   GET /api/notifications
-// @desc    Get notifications for current user
+// @desc    Get user's notifications
 // @access  Private
 router.get('/', async (req, res, next) => {
     try {
         const { page = 1, limit = 20 } = req.query;
 
         const result = await Notification.getUserNotifications(
-            req.user._id,
+            req.user.id,
             parseInt(page),
             parseInt(limit)
         );
 
         res.json({
             success: true,
-            data: result.notifications.map(n => ({
-                ...n.toObject(),
-                id: n._id
-            })),
+            count: result.notifications.length,
+            total: result.total,
             unreadCount: result.unreadCount,
-            pagination: {
-                total: result.total,
-                page: result.page,
-                pages: result.pages
-            }
+            page: result.page,
+            pages: result.pages,
+            data: result.notifications
         });
     } catch (error) {
         next(error);
@@ -43,7 +39,7 @@ router.get('/', async (req, res, next) => {
 // @access  Private
 router.get('/unread-count', async (req, res, next) => {
     try {
-        const count = await Notification.getUnreadCount(req.user._id);
+        const count = await Notification.getUnreadCount(req.user.id);
 
         res.json({
             success: true,
@@ -55,13 +51,13 @@ router.get('/unread-count', async (req, res, next) => {
 });
 
 // @route   PUT /api/notifications/:id/read
-// @desc    Mark a notification as read
+// @desc    Mark notification as read
 // @access  Private
 router.put('/:id/read', async (req, res, next) => {
     try {
         const notification = await Notification.findOne({
             _id: req.params.id,
-            user: req.user._id
+            user: req.user.id
         });
 
         if (!notification) {
@@ -71,30 +67,28 @@ router.put('/:id/read', async (req, res, next) => {
             });
         }
 
-        await notification.markAsRead();
+        const updatedNotification = await Notification.markAsRead(req.params.id);
 
         res.json({
             success: true,
-            data: {
-                ...notification.toObject(),
-                id: notification._id
-            }
+            data: updatedNotification
         });
     } catch (error) {
         next(error);
     }
 });
 
-// @route   PUT /api/notifications/mark-all-read
+// @route   PUT /api/notifications/read-all
 // @desc    Mark all notifications as read
 // @access  Private
-router.put('/mark-all-read', async (req, res, next) => {
+router.put('/read-all', async (req, res, next) => {
     try {
-        await Notification.markAllAsRead(req.user._id);
+        const result = await Notification.markAllAsRead(req.user.id);
 
         res.json({
             success: true,
-            message: 'All notifications marked as read'
+            message: 'All notifications marked as read',
+            modifiedCount: result.modifiedCount
         });
     } catch (error) {
         next(error);
@@ -108,7 +102,7 @@ router.delete('/:id', async (req, res, next) => {
     try {
         const notification = await Notification.findOneAndDelete({
             _id: req.params.id,
-            user: req.user._id
+            user: req.user.id
         });
 
         if (!notification) {
@@ -127,16 +121,17 @@ router.delete('/:id', async (req, res, next) => {
     }
 });
 
-// @route   DELETE /api/notifications
+// @route   DELETE /api/notifications/clear-all
 // @desc    Clear all notifications
 // @access  Private
-router.delete('/', async (req, res, next) => {
+router.delete('/clear-all', async (req, res, next) => {
     try {
-        await Notification.deleteMany({ user: req.user._id });
+        const result = await Notification.deleteMany({ user: req.user.id });
 
         res.json({
             success: true,
-            message: 'All notifications cleared'
+            message: 'All notifications cleared',
+            deletedCount: result.deletedCount
         });
     } catch (error) {
         next(error);

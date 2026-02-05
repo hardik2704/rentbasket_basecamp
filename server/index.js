@@ -6,7 +6,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
-const connectDB = require('./config/db');
+const { checkConnection } = require('./config/supabaseDb');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -74,7 +74,6 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // CORS configuration
-// CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
         const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',');
@@ -126,10 +125,12 @@ if (isProduction) {
 }
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+    const dbConnected = await checkConnection();
     res.json({
-        status: 'ok',
+        status: dbConnected ? 'ok' : 'degraded',
         message: 'RentBasket API is running',
+        database: dbConnected ? 'connected' : 'disconnected',
         environment: process.env.NODE_ENV || 'development',
         timestamp: new Date().toISOString()
     });
@@ -152,10 +153,12 @@ app.use((err, req, res, next) => {
         });
     }
 
-    if (err.name === 'CastError') {
+    // Handle Supabase/PostgreSQL errors
+    if (err.code && err.code.startsWith('PGRST')) {
         return res.status(400).json({
             success: false,
-            error: 'Invalid ID format'
+            error: 'Database error',
+            details: isProduction ? undefined : err.message
         });
     }
 
@@ -178,7 +181,14 @@ const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
     try {
-        await connectDB();
+        // Verify Supabase connection
+        const isConnected = await checkConnection();
+        if (!isConnected) {
+            console.warn('⚠️  Supabase connection could not be verified. Tables may not exist yet.');
+            console.log('   Run the SQL schema in Supabase Dashboard to create tables.');
+        } else {
+            console.log('✅ Supabase Database connected');
+        }
 
         // Setup socket handlers
         setupSocketHandlers(io);
@@ -190,6 +200,7 @@ const startServer = async () => {
 ╠════════════════════════════════════════════╣
 ║   Port: ${PORT}                              ║
 ║   Mode: ${(process.env.NODE_ENV || 'development').padEnd(20)}║
+║   DB:   Supabase PostgreSQL            ║
 ║   API:  http://localhost:${PORT}/api         ║
 ╚════════════════════════════════════════════╝
       `);

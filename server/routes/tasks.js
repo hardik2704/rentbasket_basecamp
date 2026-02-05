@@ -19,24 +19,16 @@ router.get('/', async (req, res, next) => {
         if (project) query.project = project;
         if (status) query.status = status;
         if (assignedTo) query.assignedTo = assignedTo;
-        if (dueDate) {
-            // Tasks due on or before this date
-            query.dueDate = { $lte: new Date(dueDate) };
-        }
+        if (dueDate) query.dueDate = dueDate;
 
-        const tasks = await Task.find(query)
-            .populate('project', 'name category')
-            .populate('assignedTo', 'name email avatar')
-            .populate('createdBy', 'name email')
-            .sort({ order: 1, createdAt: -1 });
+        const tasks = await Task.find(query);
 
         res.json({
             success: true,
             count: tasks.length,
             data: tasks.map(t => ({
-                ...t.toObject(),
-                id: t._id,
-                projectId: t.project?._id,
+                ...t,
+                projectId: t.project?.id || t.project?._id,
                 assigneeName: t.assignedTo?.name
             }))
         });
@@ -51,19 +43,16 @@ router.get('/', async (req, res, next) => {
 router.get('/my-tasks', async (req, res, next) => {
     try {
         const tasks = await Task.find({
-            assignedTo: req.user._id,
-            status: { $ne: 'done' }
-        })
-            .populate('project', 'name category')
-            .sort({ dueDate: 1, createdAt: -1 });
+            assignedTo: req.user.id,
+            statusNot: 'done'
+        });
 
         res.json({
             success: true,
             count: tasks.length,
             data: tasks.map(t => ({
-                ...t.toObject(),
-                id: t._id,
-                projectId: t.project?._id
+                ...t,
+                projectId: t.project?.id || t.project?._id
             }))
         });
     } catch (error) {
@@ -93,15 +82,14 @@ router.get('/project/:projectId', async (req, res, next) => {
             count: allTasks.length,
             data: {
                 all: allTasks.map(t => ({
-                    ...t.toObject(),
-                    id: t._id,
-                    projectId: t.project,
+                    ...t,
+                    projectId: t.project?.id || t.project?._id || req.params.projectId,
                     assigneeName: t.assignedTo?.name
                 })),
                 byStatus: {
-                    new: tasksByStatus.new.map(t => ({ ...t.toObject(), id: t._id })),
-                    in_progress: tasksByStatus.in_progress.map(t => ({ ...t.toObject(), id: t._id })),
-                    done: tasksByStatus.done.map(t => ({ ...t.toObject(), id: t._id }))
+                    new: tasksByStatus.new,
+                    in_progress: tasksByStatus.in_progress,
+                    done: tasksByStatus.done
                 }
             }
         });
@@ -115,10 +103,7 @@ router.get('/project/:projectId', async (req, res, next) => {
 // @access  Private
 router.get('/:id', async (req, res, next) => {
     try {
-        const task = await Task.findById(req.params.id)
-            .populate('project', 'name category')
-            .populate('assignedTo', 'name email avatar')
-            .populate('createdBy', 'name email');
+        const task = await Task.findById(req.params.id);
 
         if (!task) {
             return res.status(404).json({
@@ -130,9 +115,8 @@ router.get('/:id', async (req, res, next) => {
         res.json({
             success: true,
             data: {
-                ...task.toObject(),
-                id: task._id,
-                projectId: task.project?._id,
+                ...task,
+                projectId: task.project?.id || task.project?._id,
                 assigneeName: task.assignedTo?.name
             }
         });
@@ -181,22 +165,19 @@ router.post('/', [
             priority: priority || 'medium',
             assignedTo: assignedTo || null,
             dueDate: dueDate ? new Date(dueDate) : null,
-            createdBy: req.user._id
+            createdBy: req.user.id
         });
 
-        await task.populate('assignedTo', 'name email avatar');
-        await task.populate('createdBy', 'name email');
-
         // If task is assigned, create notification
-        if (assignedTo && assignedTo !== req.user._id.toString()) {
+        if (assignedTo && assignedTo !== req.user.id) {
             await Notification.createNotification({
                 user: assignedTo,
                 type: 'task_assigned',
                 title: 'New Task Assigned',
                 message: `You've been assigned to "${title}" in ${project.name}`,
                 project: projectId,
-                task: task._id,
-                triggeredBy: req.user._id
+                task: task.id,
+                triggeredBy: req.user.id
             });
 
             // Emit socket event
@@ -211,9 +192,8 @@ router.post('/', [
         res.status(201).json({
             success: true,
             data: {
-                ...task.toObject(),
-                id: task._id,
-                projectId: task.project,
+                ...task,
+                projectId: task.project?.id || projectId,
                 assigneeName: task.assignedTo?.name
             }
         });
@@ -242,10 +222,9 @@ router.put('/:id', [
             });
         }
 
-        const task = await Task.findById(req.params.id)
-            .populate('project', 'name');
+        const currentTask = await Task.findById(req.params.id);
 
-        if (!task) {
+        if (!currentTask) {
             return res.status(404).json({
                 success: false,
                 error: 'Task not found'
@@ -253,37 +232,36 @@ router.put('/:id', [
         }
 
         const { title, description, status, priority, assignedTo, dueDate } = req.body;
-        const previousAssignee = task.assignedTo?.toString();
-        const previousStatus = task.status;
+        const previousAssignee = currentTask.assignedTo?.id;
+        const previousStatus = currentTask.status;
 
-        if (title) task.title = title;
-        if (description !== undefined) task.description = description;
-        if (status) task.status = status;
-        if (priority) task.priority = priority;
-        if (assignedTo !== undefined) task.assignedTo = assignedTo || null;
-        if (dueDate !== undefined) task.dueDate = dueDate ? new Date(dueDate) : null;
+        const updates = {};
+        if (title) updates.title = title;
+        if (description !== undefined) updates.description = description;
+        if (status) updates.status = status;
+        if (priority) updates.priority = priority;
+        if (assignedTo !== undefined) updates.assignedTo = assignedTo || null;
+        if (dueDate !== undefined) updates.dueDate = dueDate ? new Date(dueDate) : null;
 
-        await task.save();
-        await task.populate('assignedTo', 'name email avatar');
-        await task.populate('createdBy', 'name email');
+        const task = await Task.update(req.params.id, updates);
 
         // Handle notifications for assignment changes
-        if (assignedTo && assignedTo !== previousAssignee && assignedTo !== req.user._id.toString()) {
+        if (assignedTo && assignedTo !== previousAssignee && assignedTo !== req.user.id) {
             await Notification.createNotification({
                 user: assignedTo,
                 type: 'task_assigned',
                 title: 'Task Assigned',
                 message: `You've been assigned to "${task.title}"`,
-                project: task.project._id,
-                task: task._id,
-                triggeredBy: req.user._id
+                project: task.project?.id,
+                task: task.id,
+                triggeredBy: req.user.id
             });
         }
 
         // Notify if task completed
         if (status === 'done' && previousStatus !== 'done') {
             const io = req.app.get('io');
-            io.to(`project:${task.project._id}`).emit('task_completed', {
+            io.to(`project:${task.project?.id}`).emit('task_completed', {
                 task: task,
                 completedBy: req.user.name
             });
@@ -292,9 +270,8 @@ router.put('/:id', [
         res.json({
             success: true,
             data: {
-                ...task.toObject(),
-                id: task._id,
-                projectId: task.project._id,
+                ...task,
+                projectId: task.project?.id,
                 assigneeName: task.assignedTo?.name
             }
         });
@@ -318,14 +295,14 @@ router.delete('/:id', async (req, res, next) => {
         }
 
         // Only admin or task creator can delete
-        if (req.user.role !== 'admin' && task.createdBy.toString() !== req.user._id.toString()) {
+        if (req.user.role !== 'admin' && task.createdBy?.id !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to delete this task'
             });
         }
 
-        await task.deleteOne();
+        await Task.delete(req.params.id);
 
         res.json({
             success: true,

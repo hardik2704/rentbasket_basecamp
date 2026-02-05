@@ -13,14 +13,12 @@ router.use(protect);
 // @access  Private
 router.get('/', async (req, res, next) => {
     try {
-        const users = await User.find({ isActive: true })
-            .select('-password')
-            .sort({ name: 1 });
+        const users = await User.find({ isActive: true });
 
         res.json({
             success: true,
             count: users.length,
-            data: users.map(u => u.toPublicJSON())
+            data: users.map(u => User.toPublicJSON(u))
         });
     } catch (error) {
         next(error);
@@ -43,7 +41,7 @@ router.get('/:id', async (req, res, next) => {
 
         res.json({
             success: true,
-            data: user.toPublicJSON()
+            data: User.toPublicJSON(user)
         });
     } catch (error) {
         next(error);
@@ -87,7 +85,7 @@ router.post('/', authorize('admin'), [
 
         res.status(201).json({
             success: true,
-            data: user.toPublicJSON()
+            data: User.toPublicJSON(user)
         });
     } catch (error) {
         next(error);
@@ -122,10 +120,11 @@ router.put('/:id', authorize('admin'), [
         }
 
         const { name, email, role, isActive } = req.body;
+        const updates = {};
 
-        if (name) user.name = name;
-        if (role) user.role = role;
-        if (typeof isActive === 'boolean') user.isActive = isActive;
+        if (name) updates.name = name;
+        if (role) updates.role = role;
+        if (typeof isActive === 'boolean') updates.isActive = isActive;
 
         if (email && email !== user.email) {
             const existingUser = await User.findOne({ email });
@@ -135,14 +134,14 @@ router.put('/:id', authorize('admin'), [
                     error: 'Email already in use'
                 });
             }
-            user.email = email;
+            updates.email = email;
         }
 
-        await user.save();
+        const updatedUser = await User.update(req.params.id, updates);
 
         res.json({
             success: true,
-            data: user.toPublicJSON()
+            data: User.toPublicJSON(updatedUser)
         });
     } catch (error) {
         next(error);
@@ -164,7 +163,7 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
         }
 
         // Prevent deleting yourself
-        if (user._id.toString() === req.user._id.toString()) {
+        if (user.id === req.user.id) {
             return res.status(400).json({
                 success: false,
                 error: 'You cannot deactivate your own account'
@@ -172,8 +171,7 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
         }
 
         // Soft delete
-        user.isActive = false;
-        await user.save();
+        await User.update(req.params.id, { isActive: false });
 
         res.json({
             success: true,

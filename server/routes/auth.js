@@ -62,25 +62,26 @@ router.post('/register', validateRegister, async (req, res, next) => {
         const userCount = await User.countDocuments();
         const isFirstUser = userCount === 0;
 
+        // Calculate login streak
+        const streakData = User.calculateLoginStreak(0, null);
+
         // Create user
         const user = await User.create({
             email,
             password,
             name,
-            role: isFirstUser ? 'admin' : (role || 'editor')
+            role: isFirstUser ? 'admin' : (role || 'editor'),
+            loginStreak: streakData.loginStreak,
+            lastLogin: streakData.lastLogin
         });
 
-        // Update login streak
-        user.updateLoginStreak();
-        await user.save();
-
         // Generate token
-        const token = generateToken(user._id);
+        const token = generateToken(user.id);
 
         res.status(201).json({
             success: true,
             data: {
-                user: user.toPublicJSON(),
+                user: User.toPublicJSON(user),
                 token
             }
         });
@@ -105,7 +106,7 @@ router.post('/login', validateLogin, async (req, res, next) => {
         const { email, password } = req.body;
 
         // Find user with password
-        const user = await User.findOne({ email }).select('+password');
+        const user = await User.findOne({ email }, true); // true = include password
 
         if (!user) {
             return res.status(401).json({
@@ -122,7 +123,7 @@ router.post('/login', validateLogin, async (req, res, next) => {
         }
 
         // Check password
-        const isMatch = await user.comparePassword(password);
+        const isMatch = await User.comparePassword(password, user.password);
 
         if (!isMatch) {
             return res.status(401).json({
@@ -132,16 +133,22 @@ router.post('/login', validateLogin, async (req, res, next) => {
         }
 
         // Update login streak
-        user.updateLoginStreak();
-        await user.save();
+        const streakData = User.calculateLoginStreak(user.loginStreak, user.lastLogin);
+        await User.update(user.id, {
+            loginStreak: streakData.loginStreak,
+            lastLogin: streakData.lastLogin
+        });
 
         // Generate token
-        const token = generateToken(user._id);
+        const token = generateToken(user.id);
+
+        // Get updated user
+        const updatedUser = await User.findById(user.id);
 
         res.json({
             success: true,
             data: {
-                user: user.toPublicJSON(),
+                user: User.toPublicJSON(updatedUser),
                 token
             }
         });
@@ -155,11 +162,11 @@ router.post('/login', validateLogin, async (req, res, next) => {
 // @access  Private
 router.get('/me', protect, async (req, res, next) => {
     try {
-        const user = await User.findById(req.user._id);
+        const user = await User.findById(req.user.id);
 
         res.json({
             success: true,
-            data: user.toPublicJSON()
+            data: User.toPublicJSON(user)
         });
     } catch (error) {
         next(error);
@@ -183,10 +190,10 @@ router.put('/update-profile', protect, [
         }
 
         const { name, email } = req.body;
-        const user = await User.findById(req.user._id);
+        const updates = {};
 
-        if (name) user.name = name;
-        if (email && email !== user.email) {
+        if (name) updates.name = name;
+        if (email && email !== req.user.email) {
             const existingUser = await User.findOne({ email });
             if (existingUser) {
                 return res.status(400).json({
@@ -194,14 +201,14 @@ router.put('/update-profile', protect, [
                     error: 'Email already in use'
                 });
             }
-            user.email = email;
+            updates.email = email;
         }
 
-        await user.save();
+        const user = await User.update(req.user.id, updates);
 
         res.json({
             success: true,
-            data: user.toPublicJSON()
+            data: User.toPublicJSON(user)
         });
     } catch (error) {
         next(error);
@@ -226,9 +233,9 @@ router.put('/change-password', protect, [
 
         const { currentPassword, newPassword } = req.body;
 
-        const user = await User.findById(req.user._id).select('+password');
+        const user = await User.findOne({ email: req.user.email }, true); // true = include password
 
-        const isMatch = await user.comparePassword(currentPassword);
+        const isMatch = await User.comparePassword(currentPassword, user.password);
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
@@ -236,8 +243,7 @@ router.put('/change-password', protect, [
             });
         }
 
-        user.password = newPassword;
-        await user.save();
+        await User.update(user.id, { password: newPassword });
 
         res.json({
             success: true,

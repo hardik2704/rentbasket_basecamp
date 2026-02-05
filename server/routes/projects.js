@@ -22,29 +22,25 @@ router.get('/', async (req, res, next) => {
 
         // For non-admin users, only show projects they're members of
         if (req.user.role !== 'admin') {
-            query['members.user'] = req.user._id;
+            query.memberId = req.user.id;
         }
 
-        const projects = await Project.find(query)
-            .populate('createdBy', 'name email')
-            .populate('members.user', 'name email avatar')
-            .sort({ updatedAt: -1 });
+        const projects = await Project.find(query);
 
         // Get task counts for each project
         const projectsWithCounts = await Promise.all(
             projects.map(async (project) => {
-                const taskCount = await Task.countDocuments({ project: project._id });
+                const taskCount = await Task.countDocuments({ project: project.id });
                 const completedCount = await Task.countDocuments({
-                    project: project._id,
+                    project: project.id,
                     status: 'done'
                 });
 
                 return {
-                    ...project.toObject(),
-                    id: project._id,
+                    ...project,
                     taskCount,
                     completedCount,
-                    memberCount: project.members.length
+                    memberCount: project.members?.length || 0
                 };
             })
         );
@@ -64,9 +60,7 @@ router.get('/', async (req, res, next) => {
 // @access  Private
 router.get('/:id', async (req, res, next) => {
     try {
-        const project = await Project.findById(req.params.id)
-            .populate('createdBy', 'name email')
-            .populate('members.user', 'name email avatar');
+        const project = await Project.findById(req.params.id);
 
         if (!project) {
             return res.status(404).json({
@@ -76,7 +70,7 @@ router.get('/:id', async (req, res, next) => {
         }
 
         // Check access for non-admin
-        if (req.user.role !== 'admin' && !project.isMember(req.user._id)) {
+        if (req.user.role !== 'admin' && !project.isMember(req.user.id)) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to access this project'
@@ -84,17 +78,16 @@ router.get('/:id', async (req, res, next) => {
         }
 
         // Get task counts
-        const taskCount = await Task.countDocuments({ project: project._id });
-        const tasksByStatus = await Task.getByStatus(project._id);
+        const taskCount = await Task.countDocuments({ project: project.id });
+        const tasksByStatus = await Task.getByStatus(project.id);
 
         res.json({
             success: true,
             data: {
-                ...project.toObject(),
-                id: project._id,
+                ...project,
                 taskCount,
                 tasksByStatus,
-                memberCount: project.members.length
+                memberCount: project.members?.length || 0
             }
         });
     } catch (error) {
@@ -108,7 +101,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', authorize('admin'), [
     body('name').trim().notEmpty().withMessage('Project name is required'),
     body('description').optional().trim(),
-    body('category').optional().isIn(['tech', 'marketing', 'ops'])
+    body('category').optional().isIn(['tech', 'marketing', 'ops', 'personal'])
 ], async (req, res, next) => {
     try {
         const errors = validationResult(req);
@@ -125,19 +118,15 @@ router.post('/', authorize('admin'), [
             name,
             description,
             category,
-            createdBy: req.user._id
+            createdBy: req.user.id
         });
-
-        await project.populate('createdBy', 'name email');
-        await project.populate('members.user', 'name email avatar');
 
         res.status(201).json({
             success: true,
             data: {
-                ...project.toObject(),
-                id: project._id,
+                ...project,
                 taskCount: 0,
-                memberCount: project.members.length
+                memberCount: project.members?.length || 0
             }
         });
     } catch (error) {
@@ -151,7 +140,7 @@ router.post('/', authorize('admin'), [
 router.put('/:id', [
     body('name').optional().trim().notEmpty(),
     body('description').optional().trim(),
-    body('category').optional().isIn(['tech', 'marketing', 'ops']),
+    body('category').optional().isIn(['tech', 'marketing', 'ops', 'personal']),
     body('status').optional().isIn(['active', 'archived', 'completed'])
 ], async (req, res, next) => {
     try {
@@ -173,7 +162,7 @@ router.put('/:id', [
         }
 
         // Check authorization
-        if (req.user.role !== 'admin' && !project.isOwner(req.user._id)) {
+        if (req.user.role !== 'admin' && !project.isOwner(req.user.id)) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to update this project'
@@ -181,19 +170,18 @@ router.put('/:id', [
         }
 
         const { name, description, category, status } = req.body;
+        const updates = {};
 
-        if (name) project.name = name;
-        if (description !== undefined) project.description = description;
-        if (category) project.category = category;
-        if (status) project.status = status;
+        if (name) updates.name = name;
+        if (description !== undefined) updates.description = description;
+        if (category) updates.category = category;
+        if (status) updates.status = status;
 
-        await project.save();
-        await project.populate('createdBy', 'name email');
-        await project.populate('members.user', 'name email avatar');
+        const updatedProject = await Project.update(req.params.id, updates);
 
         res.json({
             success: true,
-            data: project
+            data: updatedProject
         });
     } catch (error) {
         next(error);
@@ -215,13 +203,12 @@ router.delete('/:id', authorize('admin'), async (req, res, next) => {
         }
 
         // Soft delete: Mark as completed instead of deleting
-        project.status = 'completed';
-        await project.save();
+        const updatedProject = await Project.softDelete(req.params.id);
 
         res.json({
             success: true,
             message: 'Project archived successfully',
-            data: project // Return updated project so frontend can update state if needed
+            data: updatedProject
         });
     } catch (error) {
         next(error);
@@ -253,7 +240,7 @@ router.post('/:id/members', [
         }
 
         // Check authorization
-        if (req.user.role !== 'admin' && !project.isOwner(req.user._id)) {
+        if (req.user.role !== 'admin' && !project.isOwner(req.user.id)) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to add members'
@@ -270,9 +257,7 @@ router.post('/:id/members', [
             });
         }
 
-        project.members.push({ user: userId, role: 'member' });
-        await project.save();
-        await project.populate('members.user', 'name email avatar');
+        const updatedProject = await Project.addMember(req.params.id, userId, 'member');
 
         // Create notification for added user
         await Notification.createNotification({
@@ -280,13 +265,13 @@ router.post('/:id/members', [
             type: 'project_member_added',
             title: 'Added to Project',
             message: `You've been added to project "${project.name}"`,
-            project: project._id,
-            triggeredBy: req.user._id
+            project: project.id,
+            triggeredBy: req.user.id
         });
 
         res.json({
             success: true,
-            data: project
+            data: updatedProject
         });
     } catch (error) {
         next(error);
@@ -308,7 +293,7 @@ router.delete('/:id/members/:userId', async (req, res, next) => {
         }
 
         // Check authorization
-        if (req.user.role !== 'admin' && !project.isOwner(req.user._id)) {
+        if (req.user.role !== 'admin' && !project.isOwner(req.user.id)) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to remove members'
@@ -316,27 +301,19 @@ router.delete('/:id/members/:userId', async (req, res, next) => {
         }
 
         // Can't remove owner
-        const memberToRemove = project.members.find(
-            m => m.user.toString() === req.params.userId
-        );
-
-        if (memberToRemove && memberToRemove.role === 'owner') {
+        const member = await Project.getMember(req.params.id, req.params.userId);
+        if (member && member.role === 'owner') {
             return res.status(400).json({
                 success: false,
                 error: 'Cannot remove project owner'
             });
         }
 
-        project.members = project.members.filter(
-            m => m.user.toString() !== req.params.userId
-        );
-
-        await project.save();
-        await project.populate('members.user', 'name email avatar');
+        const updatedProject = await Project.removeMember(req.params.id, req.params.userId);
 
         res.json({
             success: true,
-            data: project
+            data: updatedProject
         });
     } catch (error) {
         next(error);

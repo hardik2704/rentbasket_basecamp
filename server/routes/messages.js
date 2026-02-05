@@ -16,10 +16,19 @@ router.get('/project/:projectId', async (req, res, next) => {
         const { page = 1, limit = 50 } = req.query;
 
         const project = await Project.findById(req.params.projectId);
+
         if (!project) {
             return res.status(404).json({
                 success: false,
                 error: 'Project not found'
+            });
+        }
+
+        // Check membership for non-admin
+        if (req.user.role !== 'admin' && !project.isMember(req.user.id)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Not authorized to view messages in this project'
             });
         }
 
@@ -31,18 +40,11 @@ router.get('/project/:projectId', async (req, res, next) => {
 
         res.json({
             success: true,
-            data: result.messages.map(m => ({
-                ...m.toObject(),
-                id: m._id,
-                userId: m.sender._id,
-                userName: m.sender.name,
-                timestamp: m.createdAt
-            })),
-            pagination: {
-                total: result.total,
-                page: result.page,
-                pages: result.pages
-            }
+            count: result.messages.length,
+            total: result.total,
+            page: result.page,
+            pages: result.pages,
+            data: result.messages
         });
     } catch (error) {
         next(error);
@@ -65,10 +67,10 @@ router.post('/', [
             });
         }
 
-        const { projectId, content } = req.body;
+        const { projectId, content, attachments } = req.body;
 
-        // Verify project exists
         const project = await Project.findById(projectId);
+
         if (!project) {
             return res.status(404).json({
                 success: false,
@@ -76,55 +78,39 @@ router.post('/', [
             });
         }
 
-        // Get all users for mention parsing
+        // Parse mentions
         const users = await User.find({ isActive: true });
         const mentions = Message.parseMentions(content, users);
 
         const message = await Message.create({
             project: projectId,
-            sender: req.user._id,
+            sender: req.user.id,
             content,
-            mentions
+            mentions,
+            attachments: attachments || []
         });
 
-        await message.populate('sender', 'name email avatar');
-        await message.populate('mentions', 'name email');
-
-        // Format response
-        const formattedMessage = {
-            ...message.toObject(),
-            id: message._id,
-            userId: message.sender._id,
-            userName: message.sender.name,
-            timestamp: message.createdAt
-        };
-
-        // Emit to all users in the project room
-        const io = req.app.get('io');
-        io.to(`project:${projectId}`).emit('new_message', formattedMessage);
-
         // Create notifications for mentioned users
-        for (const userId of mentions) {
-            if (userId.toString() !== req.user._id.toString()) {
+        for (const mentionedUserId of mentions) {
+            if (mentionedUserId !== req.user.id) {
                 await Notification.createNotification({
-                    user: userId,
+                    user: mentionedUserId,
                     type: 'message_mention',
                     title: 'You were mentioned',
                     message: `${req.user.name} mentioned you in ${project.name}`,
                     project: projectId,
-                    triggeredBy: req.user._id
-                });
-
-                io.to(`user:${userId}`).emit('notification', {
-                    type: 'mention',
-                    message: formattedMessage
+                    triggeredBy: req.user.id
                 });
             }
         }
 
+        // Emit socket event
+        const io = req.app.get('io');
+        io.to(`project:${projectId}`).emit('new_message', message);
+
         res.status(201).json({
             success: true,
-            data: formattedMessage
+            data: message
         });
     } catch (error) {
         next(error);
@@ -133,7 +119,7 @@ router.post('/', [
 
 // @route   PUT /api/messages/:id
 // @desc    Edit a message
-// @access  Private (only message owner)
+// @access  Private
 router.put('/:id', [
     body('content').trim().notEmpty().withMessage('Message content is required')
 ], async (req, res, next) => {
@@ -155,11 +141,18 @@ router.put('/:id', [
             });
         }
 
-        // Only message owner can edit
-        if (message.sender.toString() !== req.user._id.toString()) {
+        // Only sender can edit
+        if (message.sender.id !== req.user.id && message.sender._id !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to edit this message'
+            });
+        }
+
+        if (message.isDeleted) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot edit a deleted message'
             });
         }
 
@@ -169,29 +162,18 @@ router.put('/:id', [
         const users = await User.find({ isActive: true });
         const mentions = Message.parseMentions(content, users);
 
-        message.content = content;
-        message.mentions = mentions;
-        message.isEdited = true;
-        message.editedAt = new Date();
+        const updatedMessage = await Message.update(req.params.id, {
+            content,
+            mentions
+        });
 
-        await message.save();
-        await message.populate('sender', 'name email avatar');
-
-        const formattedMessage = {
-            ...message.toObject(),
-            id: message._id,
-            userId: message.sender._id,
-            userName: message.sender.name,
-            timestamp: message.createdAt
-        };
-
-        // Emit update
+        // Emit socket event
         const io = req.app.get('io');
-        io.to(`project:${message.project}`).emit('message_updated', formattedMessage);
+        io.to(`project:${message.project}`).emit('message_updated', updatedMessage);
 
         res.json({
             success: true,
-            data: formattedMessage
+            data: updatedMessage
         });
     } catch (error) {
         next(error);
@@ -200,7 +182,7 @@ router.put('/:id', [
 
 // @route   DELETE /api/messages/:id
 // @desc    Delete a message (soft delete)
-// @access  Private (owner or admin)
+// @access  Private
 router.delete('/:id', async (req, res, next) => {
     try {
         const message = await Message.findById(req.params.id);
@@ -212,22 +194,23 @@ router.delete('/:id', async (req, res, next) => {
             });
         }
 
-        // Only message owner or admin can delete
-        if (message.sender.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        // Only sender or admin can delete
+        const senderId = message.sender.id || message.sender._id;
+        if (senderId !== req.user.id && req.user.role !== 'admin') {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to delete this message'
             });
         }
 
-        message.isDeleted = true;
-        message.content = 'This message has been deleted';
-        await message.save();
+        const updatedMessage = await Message.update(req.params.id, {
+            isDeleted: true
+        });
 
-        // Emit deletion
+        // Emit socket event
         const io = req.app.get('io');
         io.to(`project:${message.project}`).emit('message_deleted', {
-            id: message._id
+            id: req.params.id
         });
 
         res.json({

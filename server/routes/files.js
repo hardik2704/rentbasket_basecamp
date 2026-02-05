@@ -1,64 +1,23 @@
 const express = require('express');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const { body, validationResult } = require('express-validator');
 const { File, Project } = require('../models');
 const { protect } = require('../middleware');
 const supabaseStorage = require('../config/supabase');
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(protect);
-
-// Use memory storage if Supabase is configured, disk storage otherwise
-const storage = supabaseStorage.isConfigured()
-    ? multer.memoryStorage()
-    : multer.diskStorage({
-        destination: (req, file, cb) => {
-            const uploadPath = process.env.UPLOAD_PATH || './uploads';
-            if (!fs.existsSync(uploadPath)) {
-                fs.mkdirSync(uploadPath, { recursive: true });
-            }
-            cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-            const uniqueName = `${uuidv4()}${path.extname(file.originalname)}`;
-            cb(null, uniqueName);
-        }
-    });
-
-const fileFilter = (req, file, cb) => {
-    const allowedTypes = [
-        'image/jpeg',
-        'image/png',
-        'image/gif',
-        'image/webp',
-        'image/svg+xml',
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/plain',
-        'text/csv'
-    ];
-
-    if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error(`File type ${file.mimetype} not allowed`), false);
-    }
-};
-
+// Multer config for memory storage (for Supabase upload)
 const upload = multer({
-    storage,
-    fileFilter,
+    storage: multer.memoryStorage(),
     limits: {
-        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024
+        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 // 10MB default
     }
 });
+
+// All routes require authentication
+router.use(protect);
 
 // @route   GET /api/files/project/:projectId
 // @desc    Get all files for a project
@@ -66,6 +25,7 @@ const upload = multer({
 router.get('/project/:projectId', async (req, res, next) => {
     try {
         const project = await Project.findById(req.params.projectId);
+
         if (!project) {
             return res.status(404).json({
                 success: false,
@@ -73,33 +33,20 @@ router.get('/project/:projectId', async (req, res, next) => {
             });
         }
 
+        // Check membership for non-admin
+        if (req.user.role !== 'admin' && !project.isMember(req.user.id)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Not authorized to view files in this project'
+            });
+        }
+
         const files = await File.getProjectFiles(req.params.projectId);
-
-        // Generate signed URLs for Supabase files
-        const filesWithUrls = await Promise.all(files.map(async (f) => {
-            const fileObj = {
-                ...f.toObject(),
-                id: f._id,
-                formattedSize: f.getFormattedSize(),
-                typeCategory: f.getTypeCategory()
-            };
-
-            // If stored in Supabase and URL is a path, get signed URL
-            if (supabaseStorage.isConfigured() && f.storagePath) {
-                try {
-                    fileObj.url = await supabaseStorage.getSignedUrl(f.storagePath);
-                } catch (e) {
-                    console.error('Error getting signed URL:', e);
-                }
-            }
-
-            return fileObj;
-        }));
 
         res.json({
             success: true,
             count: files.length,
-            data: filesWithUrls
+            data: files
         });
     } catch (error) {
         next(error);
@@ -111,45 +58,38 @@ router.get('/project/:projectId', async (req, res, next) => {
 // @access  Private
 router.get('/:id', async (req, res, next) => {
     try {
-        const file = await File.findById(req.params.id)
-            .populate('uploadedBy', 'name email avatar');
+        const file = await File.findById(req.params.id);
 
-        if (!file || file.isDeleted) {
+        if (!file) {
             return res.status(404).json({
                 success: false,
                 error: 'File not found'
             });
         }
 
-        const fileObj = {
-            ...file.toObject(),
-            id: file._id,
-            formattedSize: file.getFormattedSize(),
-            typeCategory: file.getTypeCategory()
-        };
-
-        // Get signed URL for Supabase files
-        if (supabaseStorage.isConfigured() && file.storagePath) {
+        // If it's a Supabase file, get a signed URL
+        if (file.storageType === 'supabase' && file.storagePath) {
             try {
-                fileObj.url = await supabaseStorage.getSignedUrl(file.storagePath);
-            } catch (e) {
-                console.error('Error getting signed URL:', e);
+                const signedUrl = await supabaseStorage.getSignedUrl(file.storagePath);
+                file.signedUrl = signedUrl;
+            } catch (err) {
+                console.error('Failed to get signed URL:', err.message);
             }
         }
 
         res.json({
             success: true,
-            data: fileObj
+            data: file
         });
     } catch (error) {
         next(error);
     }
 });
 
-// @route   POST /api/files/upload
+// @route   POST /api/files
 // @desc    Upload a file
 // @access  Private
-router.post('/upload', upload.single('file'), async (req, res, next) => {
+router.post('/', upload.single('file'), async (req, res, next) => {
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -161,8 +101,6 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         const { projectId, description } = req.body;
 
         if (!projectId) {
-            // Clean up if projectId missing
-            if (req.file.path) fs.unlinkSync(req.file.path);
             return res.status(400).json({
                 success: false,
                 error: 'Project ID is required'
@@ -170,107 +108,106 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         }
 
         const project = await Project.findById(projectId);
+
         if (!project) {
-            if (req.file.path) fs.unlinkSync(req.file.path);
             return res.status(404).json({
                 success: false,
                 error: 'Project not found'
             });
         }
 
-        const uniqueName = `${uuidv4()}${path.extname(req.file.originalname)}`;
-        let fileUrl, storagePath;
+        let fileData;
 
-        // Upload to Supabase if configured, otherwise use local storage
+        // Use Supabase storage if configured
         if (supabaseStorage.isConfigured()) {
-            try {
-                const result = await supabaseStorage.uploadFile(
-                    req.file.buffer,
-                    uniqueName,
-                    req.file.mimetype
-                );
-                fileUrl = result.url;
-                storagePath = result.path;
-            } catch (uploadError) {
-                return res.status(500).json({
-                    success: false,
-                    error: `Upload failed: ${uploadError.message}`
-                });
-            }
+            const uniqueName = `${Date.now()}-${req.file.originalname}`;
+            const uploadResult = await supabaseStorage.uploadFile(
+                req.file.buffer,
+                uniqueName,
+                req.file.mimetype
+            );
+
+            fileData = {
+                project: projectId,
+                name: uniqueName,
+                originalName: req.file.originalname,
+                description: description || '',
+                url: uploadResult.url,
+                storagePath: uploadResult.path,
+                storageType: 'supabase',
+                type: path.extname(req.file.originalname).slice(1) || 'file',
+                mimeType: req.file.mimetype,
+                size: req.file.size,
+                uploadedBy: req.user.id
+            };
         } else {
-            // Local storage - file is already saved by multer
-            fileUrl = `/uploads/${req.file.filename}`;
-            storagePath = null;
+            // Fallback to local storage info (no actual file saved in this version)
+            return res.status(500).json({
+                success: false,
+                error: 'File storage is not configured. Please configure Supabase.'
+            });
         }
 
-        const file = await File.create({
-            project: projectId,
-            name: supabaseStorage.isConfigured() ? uniqueName : req.file.filename,
-            originalName: req.file.originalname,
-            description: description || '',
-            url: fileUrl,
-            storagePath: storagePath,
-            storageType: supabaseStorage.isConfigured() ? 'supabase' : 'local',
-            type: path.extname(req.file.originalname).slice(1),
-            mimeType: req.file.mimetype,
-            size: req.file.size,
-            uploadedBy: req.user._id
-        });
+        const file = await File.create(fileData);
 
-        await file.populate('uploadedBy', 'name email avatar');
+        // Emit socket event
+        const io = req.app.get('io');
+        io.to(`project:${projectId}`).emit('file_uploaded', file);
 
         res.status(201).json({
             success: true,
-            data: {
-                ...file.toObject(),
-                id: file._id,
-                formattedSize: file.getFormattedSize(),
-                typeCategory: file.getTypeCategory()
-            }
+            data: file
         });
     } catch (error) {
-        // Clean up on error
-        if (req.file && req.file.path) {
-            try {
-                fs.unlinkSync(req.file.path);
-            } catch (e) {
-                console.error('Error deleting file:', e);
-            }
-        }
         next(error);
     }
 });
 
 // @route   PUT /api/files/:id
-// @desc    Update file info (name, description)
+// @desc    Update file info
 // @access  Private
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', [
+    body('originalName').optional().trim(),
+    body('description').optional().trim()
+], async (req, res, next) => {
     try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array()
+            });
+        }
+
         const file = await File.findById(req.params.id);
 
-        if (!file || file.isDeleted) {
+        if (!file) {
             return res.status(404).json({
                 success: false,
                 error: 'File not found'
             });
         }
 
-        const { name, description } = req.body;
+        // Only uploader or admin can edit
+        const uploaderId = file.uploadedBy?.id || file.uploadedBy?._id;
+        if (uploaderId !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                error: 'Not authorized to edit this file'
+            });
+        }
 
-        if (name) file.originalName = name;
-        if (description !== undefined) file.description = description;
+        const { originalName, description } = req.body;
+        const updates = {};
 
-        await file.save();
-        await file.populate('uploadedBy', 'name email avatar');
+        if (originalName) updates.originalName = originalName;
+        if (description !== undefined) updates.description = description;
+
+        const updatedFile = await File.update(req.params.id, updates);
 
         res.json({
             success: true,
-            data: {
-                ...file.toObject(),
-                id: file._id,
-                formattedSize: file.getFormattedSize(),
-                typeCategory: file.getTypeCategory()
-            }
+            data: updatedFile
         });
     } catch (error) {
         next(error);
@@ -279,7 +216,7 @@ router.put('/:id', async (req, res, next) => {
 
 // @route   DELETE /api/files/:id
 // @desc    Delete a file
-// @access  Private (uploader or admin)
+// @access  Private
 router.delete('/:id', async (req, res, next) => {
     try {
         const file = await File.findById(req.params.id);
@@ -292,25 +229,26 @@ router.delete('/:id', async (req, res, next) => {
         }
 
         // Only uploader or admin can delete
-        if (file.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        const uploaderId = file.uploadedBy?.id || file.uploadedBy?._id;
+        if (uploaderId !== req.user.id && req.user.role !== 'admin') {
             return res.status(403).json({
                 success: false,
                 error: 'Not authorized to delete this file'
             });
         }
 
-        // Delete from cloud storage if applicable
-        if (file.storageType === 'supabase' && file.storagePath && supabaseStorage.isConfigured()) {
+        // Delete from Supabase storage if applicable
+        if (file.storageType === 'supabase' && file.storagePath) {
             try {
                 await supabaseStorage.deleteFile(file.storagePath);
-            } catch (e) {
-                console.error('Error deleting from Supabase:', e);
+            } catch (err) {
+                console.error('Failed to delete from Supabase:', err.message);
+                // Continue with soft delete even if storage deletion fails
             }
         }
 
-        // Soft delete
-        file.isDeleted = true;
-        await file.save();
+        // Soft delete in database
+        await File.softDelete(req.params.id);
 
         res.json({
             success: true,
