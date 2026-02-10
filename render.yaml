@@ -21,12 +21,12 @@ services:
         sync: false
 
   # Frontend Client
-  - type: static
+  - type: web
     name: rentbasket-client
     env: static
     rootDir: client
     buildCommand: npm install && npm run build
-    publishPath: ./dist
+    staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
         sync: false
