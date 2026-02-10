@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:5001')) + '/api';
 
 // Custom error class for API errors
 export class ApiError extends Error {
