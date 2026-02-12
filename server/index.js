@@ -76,12 +76,22 @@ app.use('/api/auth/register', authLimiter);
 // CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
-        const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',');
-        // Allow requests with no origin (mobile apps, Postman, etc.) OR localhost in development
+        // Get allowed origins from environment variable
+        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const allowedOrigins = clientUrl.split(',').map(o => o.trim());
+
+        // Log origins for debugging in production if needed
+        if (isProduction && origin && !allowedOrigins.includes(origin)) {
+            console.warn('⚠️ CORS blocked a request from:', origin);
+            console.log('   Allowed origins (CLIENT_URL):', allowedOrigins);
+        }
+
+        // Allow requests with no origin (mobile apps, Postman) 
+        // OR if origin is in allowed list
+        // OR if in development and origin is localhost
         if (!origin || allowedOrigins.includes(origin) || (!isProduction && origin?.includes('localhost'))) {
             callback(null, true);
         } else {
-            console.log('Blocked by CORS:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -115,13 +125,26 @@ app.use('/api/notifications', notificationRoutes);
 // ============ PRODUCTION STATIC ASSETS ============
 if (isProduction) {
     const path = require('path');
-    // Serve static files from the React client build
-    app.use(express.static(path.join(__dirname, '../client/dist')));
+    const fs = require('fs');
+    const clientBuildPath = path.join(__dirname, '../client/dist');
+    const indexPath = path.join(clientBuildPath, 'index.html');
 
-    // Handle React routing, return all requests to React app
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
-    });
+    // Check if index.html specifically exists before trying to serve frontend
+    if (fs.existsSync(indexPath)) {
+        console.log('📦 Production Frontend found. Serving static files.');
+        app.use(express.static(clientBuildPath));
+
+        // Handle React routing
+        app.get('*', (req, res) => {
+            if (!req.path.startsWith('/api')) {
+                res.sendFile(indexPath);
+            } else {
+                res.status(404).json({ success: false, error: 'API route not found' });
+            }
+        });
+    } else {
+        console.log('ℹ️ Running as API-only server (Static index.html not found).');
+    }
 }
 
 // Health check endpoint
