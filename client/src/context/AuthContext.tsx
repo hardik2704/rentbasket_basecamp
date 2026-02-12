@@ -6,7 +6,7 @@ interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
     isLoading: boolean;
-    login: (credentials: LoginForm) => Promise<boolean>;
+    login: (credentials: LoginForm) => Promise<{ success: boolean; error?: string }>;
     logout: () => void;
     isAdmin: boolean;
 }
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         verifyToken();
     }, []);
 
-    const login = useCallback(async (credentials: LoginForm): Promise<boolean> => {
+    const login = useCallback(async (credentials: LoginForm): Promise<{ success: boolean; error?: string }> => {
         setIsLoading(true);
 
         try {
@@ -55,15 +55,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 localStorage.setItem('rentbasket_user', JSON.stringify(response.data.user));
                 localStorage.setItem('rentbasket_token', response.data.token);
                 setIsLoading(false);
-                return true;
+                return { success: true };
             }
 
             setIsLoading(false);
-            return false;
-        } catch (error) {
+            return { success: false, error: 'Login failed' };
+        } catch (error: any) {
             console.error('Login error:', error);
             setIsLoading(false);
-            return false;
+            return {
+                success: false,
+                error: error.message || 'An unexpected error occurred'
+            };
         }
     }, []);
 

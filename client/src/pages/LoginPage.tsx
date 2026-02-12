@@ -24,12 +24,12 @@ export function LoginPage() {
             return;
         }
 
-        const success = await login({ email, password });
+        const result = await login({ email, password });
 
-        if (success) {
+        if (result.success) {
             navigate('/');
         } else {
-            setError('Invalid email or password');
+            setError(result.error || 'Invalid email or password');
         }
     };
 
