@@ -1,6 +1,11 @@
 // API Configuration
 const API_BASE_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:5001')) + '/api';
 
+// Log the resolved API URL in development/debug
+if (!import.meta.env.PROD) {
+    console.log('[API] Base URL:', API_BASE_URL);
+}
+
 // Custom error class for API errors
 export class ApiError extends Error {
     status?: number;
@@ -25,8 +30,9 @@ const getAuthHeaders = (): HeadersInit => {
 
 // Generic API call wrapper with improved error handling
 async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${API_BASE_URL}${endpoint}`;
     try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const response = await fetch(url, {
             ...options,
             headers: {
                 ...getAuthHeaders(),
@@ -48,8 +54,13 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
         if (error instanceof ApiError) {
             throw error;
         }
+        // Network-level error (CORS, DNS, connection refused, etc.)
+        const message = error instanceof Error ? error.message : 'Network error';
+        console.error(`[API] Network error calling ${url}:`, message);
         throw new ApiError(
-            error instanceof Error ? error.message : 'Network error occurred'
+            `Cannot connect to server. Please check your connection. (${message})`,
+            0,
+            'NETWORK_ERROR'
         );
     }
 }

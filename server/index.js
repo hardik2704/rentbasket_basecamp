@@ -80,20 +80,35 @@ const corsOptions = {
         const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
         const allowedOrigins = clientUrl.split(',').map(o => o.trim());
 
-        // Log origins for debugging in production if needed
-        if (isProduction && origin && !allowedOrigins.includes(origin)) {
-            console.warn('⚠️ CORS blocked a request from:', origin);
-            console.log('   Allowed origins (CLIENT_URL):', allowedOrigins);
+        // Allow requests with no origin (same-origin, mobile apps, Postman, server-to-server)
+        if (!origin) {
+            return callback(null, true);
         }
 
-        // Allow requests with no origin (mobile apps, Postman) 
-        // OR if origin is in allowed list
-        // OR if in development and origin is localhost
-        if (!origin || allowedOrigins.includes(origin) || (!isProduction && origin?.includes('localhost'))) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
+        // Allow if origin is in the allowed list
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
         }
+
+        // In development, allow any localhost origin
+        if (!isProduction && origin.includes('localhost')) {
+            return callback(null, true);
+        }
+
+        // In production, also allow the server's own URL (monorepo deploy)
+        // This handles the case where frontend is served from the same server
+        const serverUrl = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL;
+        if (isProduction && serverUrl && origin === serverUrl) {
+            return callback(null, true);
+        }
+
+        // Log blocked origins for debugging
+        console.warn('⚠️ CORS blocked request from:', origin);
+        console.log('   Allowed origins (CLIENT_URL):', allowedOrigins);
+        if (serverUrl) console.log('   Server URL:', serverUrl);
+
+        // In production, block unknown origins
+        callback(new Error(`CORS: Origin ${origin} not allowed. Set CLIENT_URL env var to include this origin.`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -217,6 +232,8 @@ const startServer = async () => {
         setupSocketHandlers(io);
 
         server.listen(PORT, () => {
+            const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+            const renderUrl = process.env.RENDER_EXTERNAL_URL || 'not set';
             console.log(`
 ╔════════════════════════════════════════════╗
 ║   🚀 RentBasket API Server                 ║
@@ -226,6 +243,8 @@ const startServer = async () => {
 ║   DB:   Supabase PostgreSQL            ║
 ║   API:  http://localhost:${PORT}/api         ║
 ╚════════════════════════════════════════════╝
+   CORS allowed origins: ${clientUrl}
+   Render URL: ${renderUrl}
       `);
         });
     } catch (error) {
