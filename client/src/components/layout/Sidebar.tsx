@@ -11,6 +11,7 @@ import {
     FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import logo from '../../assets/RentBasket-Logo.png';
 import './Sidebar.css';
 
 export function Sidebar() {
@@ -35,7 +36,7 @@ export function Sidebar() {
         <aside className="sidebar">
             <div className="sidebar-header">
                 <div className="sidebar-logo">
-                    <div className="logo-icon">R</div>
+                    <img src={logo} alt="RentBasket" className="logo-img" />
                     <span className="logo-text">RentBasket</span>
                 </div>
             </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { AlertCircle, LogIn } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logo from '../assets/RentBasket-Logo.png';
 import './LoginPage.css';
 
 export function LoginPage() {
@@ -38,7 +39,7 @@ export function LoginPage() {
             <div className="login-container">
                 <div className="login-header">
                     <div className="login-logo">
-                        <div className="logo-icon">R</div>
+                        <img src={logo} alt="RentBasket" className="logo-img" />
                         <span className="logo-text">RentBasket</span>
                     </div>
                     <h1>Welcome back</h1>

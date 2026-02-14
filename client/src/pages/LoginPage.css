@@ -29,17 +29,11 @@
     margin-bottom: var(--spacing-lg);
 }
 
-.login-logo .logo-icon {
+.login-logo .logo-img {
     width: 48px;
     height: 48px;
-    background-color: var(--color-primary);
-    color: white;
+    object-fit: contain;
     border-radius: var(--radius-lg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: var(--font-weight-bold);
-    font-size: var(--font-size-2xl);
 }
 
 .login-logo .logo-text {
