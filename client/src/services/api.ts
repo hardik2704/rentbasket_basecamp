@@ -40,16 +40,35 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
             },
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+        // Read body as text first to avoid JSON parse crash on empty/invalid responses
+        const text = await response.text();
+
+        let data: any;
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            // Server returned non-JSON (e.g. HTML error page)
+            if (!response.ok) {
+                throw new ApiError(
+                    `Server error (${response.status}): received non-JSON response`,
+                    response.status
+                );
+            }
             throw new ApiError(
-                errorData.error || `Request failed with status ${response.status}`,
-                response.status,
-                errorData.code
+                `Unexpected server response (not JSON)`,
+                response.status
             );
         }
 
-        return response.json();
+        if (!response.ok) {
+            throw new ApiError(
+                data.error || `Request failed with status ${response.status}`,
+                response.status,
+                data.code
+            );
+        }
+
+        return data as T;
     } catch (error) {
         if (error instanceof ApiError) {
             throw error;
