@@ -73,17 +73,28 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// CORS configuration
+// CORS configuration — allows same-origin requests for monorepo deploys
+const buildAllowedOrigins = () => {
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const origins = clientUrl.split(',').map(o => o.trim());
+    // Render sets this automatically — add it so same-origin requests work
+    if (process.env.RENDER_EXTERNAL_URL) {
+        origins.push(process.env.RENDER_EXTERNAL_URL);
+    }
+    // Add the server's own URL (for monorepo — frontend served from same server)
+    const port = process.env.PORT || 5001;
+    origins.push(`http://localhost:${port}`);
+    return origins;
+};
+
 const corsOptions = {
     origin: function (origin, callback) {
-        // Get allowed origins from environment variable
-        const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-        const allowedOrigins = clientUrl.split(',').map(o => o.trim());
-
-        // Allow requests with no origin (same-origin, mobile apps, Postman, server-to-server)
+        // Allow requests with no origin (same-origin, mobile apps, Postman)
         if (!origin) {
             return callback(null, true);
         }
+
+        const allowedOrigins = buildAllowedOrigins();
 
         // Allow if origin is in the allowed list
         if (allowedOrigins.includes(origin)) {
@@ -95,20 +106,14 @@ const corsOptions = {
             return callback(null, true);
         }
 
-        // In production, also allow the server's own URL (monorepo deploy)
-        // This handles the case where frontend is served from the same server
-        const serverUrl = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL;
-        if (isProduction && serverUrl && origin === serverUrl) {
+        // In production, allow any .onrender.com origin (monorepo deploy)
+        if (isProduction && origin.endsWith('.onrender.com')) {
             return callback(null, true);
         }
 
-        // Log blocked origins for debugging
-        console.warn('⚠️ CORS blocked request from:', origin);
-        console.log('   Allowed origins (CLIENT_URL):', allowedOrigins);
-        if (serverUrl) console.log('   Server URL:', serverUrl);
-
-        // In production, block unknown origins
-        callback(new Error(`CORS: Origin ${origin} not allowed. Set CLIENT_URL env var to include this origin.`));
+        // Log and block unknown origins
+        console.warn('CORS blocked:', origin, '| Allowed:', allowedOrigins);
+        callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
